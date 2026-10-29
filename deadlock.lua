@@ -29,10 +29,9 @@ function script_properties()
 	obs.obs_properties_add_button(
 		props,
 		"add_image",
-		"Add image to current scene",
-		add_golisopod
+		"Add pod to current scene",
+		add_random_golisopod
 	)
-
 
 	obs.obs_properties_add_button(
 		props,
@@ -128,32 +127,104 @@ function script_properties()
 	return props
 end
 
-function new_golisopod(path)
-	local golisopod = obs.obs_create_source()--blah blah blah)
-	return golisopod
+function load_golisopods(folder_path)
+	if type(folder_path)~="string" then
+		obs.script_log(obs.LOG_ERROR,"golsiopod folder not a string")
+		return false
+	end
+
+	for k, v in ipairs(golisopod_sources) do
+		obs.obs_source_release(v)
+		obs.script_log(obs.LOG_DEBUG,"Released golisopod")
+	end
+
+	folder_path = tostring(folder_path)
+
+	directory = io.popen("ls "..folder_path, rl)
+	for filename in directory:lines("l") do
+		pod = new_golisopod(filename,filename)
+		golisopod_sources[filename] = pod
+		obs.script_log(obs.LOG_INFO,"added golisopod from file "..filename)
+	end
+	directory:close()
+	return
 end
 
-function add_golisopod(scene,index)
-	local scene = obs.obs_scene_from_source(obs.obs_get_source_by_uuid(scene_uuid))
+function new_golisopod(file_path,name)
+	local settings = obs.obs_data_create()
+	obs.obs_data_set_string(settings, "file", file_path)
 
-	if index == nil then
-		index = math.random(0,len(golisopod_sources))
+	local source = obs.obs_source_create(
+		"image_source",
+		name,
+		settings,
+		nil
+	    )
+
+	obs.obs_data_release(settings)
+
+    	if source == nil then
+        	obs.script_log(obs.LOG_ERROR, "Could not create image source")
+        	return nil
+    	end
+
+	return source
+end
+
+function add_random_golisopod(scene)
+	local keys = {}
+
+	for key in pairs(golisopod_sources) do
+	    table.insert(keys, key)
+	end
+	local randomIndex = math.random(1, #keys)
+	local key = keys[randomIndex]
+
+	item = add_golisopod(scene,key)
+
+	local group = obs.obs_get_source_by_uuid(output_group_uuid)
+	if group == nil then
+		obs.script_log(obs.LOG_ERROR,"No group set!")
+		return false
 	end
 
-	if golisopod_sources[index] then
-		local instance = obs_scene_add(scene,golisopod_sources[index])
-		if instance == nil then
-			obs.script_log(obs.LOG_ERROR,"failed to add pod")
-			return
-		end
-		table.insert(golisopod_instances,instance)
+	obs.obs_sceneitem_group_add_item(group,item)
+
+	obs.obs_source_release(group)
+
+	table.insert(golisopod_instances,item)
+	return false
+end
+
+function add_golisopod(scene, index)
+	local source = obs.obs_get_source_by_uuid(scene_uuid)
+	local scene = obs.obs_scene_from_source(source)
+	if not scene then
+		obs.script_log(obs.LOG_ERROR,"No scene. Is it set?")
+		return false
 	end
-	--duty of caller to add to instance table
+
+	if not golisopod_sources[index] then
+		obs.script_log(obs.LOG_ERROR,"this source dont exist")
+		return false
+	end
+
+	local instance = obs.obs_scene_add(scene,golisopod_sources[index])
+	if instance == nil then
+		obs.script_log(obs.LOG_ERROR,"failed to add pod")
+		return
+	end
+	table.insert(golisopod_instances,instance)
+
+	obs.obs_source_release(source)
+	obs.obs_scene_release(scene)
 	return item
+	--duty of caller to add to instance table
 end
 
 function script_update(settings)
 	image_path = obs.obs_data_get_string(settings, "image_path")
+	load_golisopods(image_path)
 	scene_uuid = obs.obs_data_get_string(settings, "destination_scene")
 	local group_uuid = obs.obs_data_get_string(settings, "destination_group")
 	output_group_uuid = obs.obs_get_source_by_uuid(group_uuid)
@@ -166,4 +237,7 @@ function script_unload()
 		obs.obs_item_release(i)
 	end
 	obs.obs_properties_destroy(props)
+end
+
+function script_load()
 end
